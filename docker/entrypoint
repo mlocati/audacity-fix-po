@@ -1,0 +1,83 @@
+#!/bin/bash
+
+set -o nounset
+set -o errexit
+
+showHelp()
+{
+    cat <<EOT
+You should run this Docker image with something like:
+
+docker run --rm -it -v /path/to/audacity:/app ghcr.io/mlocati/audacity-fix-po language1 [language2...]
+
+On Windows you can use C:\path\to\audacity instead of /path/to/audacity
+
+Example:
+
+docker run --rm -it -v /path/to/audacity:/app ghcr.io/mlocati/audacity-fix-po af ar
+
+EOT
+}
+
+getWantedPOFiles()
+{
+    WANTED_PO_FILES=''
+    while :; do
+		if [ $# -lt 1 ]; then
+			break
+		fi
+        local PO_FILE_LOCALE="$(basename -s .po "$1")"
+        local PO_FILE="locale/$PO_FILE_LOCALE.po"
+        if [ ! -f "$PO_FILE" ]; then
+            printf 'Invalid argument %s (unable to find the file %s)\n' "$1" "$PO_FILE"
+            exit 1
+        fi
+        WANTED_PO_FILES="$WANTED_PO_FILES $PO_FILE_LOCALE.po"
+		shift
+	done
+    WANTED_PO_FILES="${WANTED_PO_FILES# }"
+}
+
+printf 'Checking configuration... '
+for CHECK_ME in '/app/.git/config /app/locale/update_po_files'; do
+    if [ ! "$CHECK_ME" ]; then
+        printf 'FAILED!\nPlease mount the directory of your local clone of the Audacity repository to /app\n' >&2
+        printf '(unable to find the file %s)\n\n' "$CHECK_ME" >&2
+        showHelp
+        exit 1
+    fi
+done
+printf 'passed.\n'
+
+cd /app
+
+printf 'Checking arguments... '
+getWantedPOFiles "$@"
+if [ -z "$WANTED_PO_FILES" ]; then
+    printf 'FAILED: please specify at least one language file to be fixed.\n\n' >&2
+    showHelp
+    exit 1
+fi
+printf 'passed.\n'
+
+printf 'Checking repository... '
+CHANGES="$(git status --porcelain)"
+if [ -n "$CHANGES" ]; then
+    printf 'FAILED: please commit changes in the Audacity repository.\n' >&2
+    printf 'We found these changes:\n%s\n\n' "$CHANGES" >&2
+    exit 1
+fi
+printf 'passed.\n'
+
+rm -rf /clone
+git clone --no-hardlinks --single-branch --no-tags /app /clone
+
+cd /clone/locale
+
+./update_po_files.sh
+
+for WANTED_PO_FILE in $WANTED_PO_FILES; do
+    printf 'Copying %s... ' "$WANTED_PO_FILE"
+    cp "/clone/locale/$WANTED_PO_FILE" "/app/locale/$WANTED_PO_FILE"
+    printf 'done.\n'
+done

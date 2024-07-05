@@ -1,0 +1,34 @@
+name: Build Docker image
+
+on:
+  push:
+    branches:
+      - main
+    tags-ignore:
+      - "**"
+    paths:
+      - .github/workflows/build.yml
+      - "docker/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Build
+        run: docker build --force-rm --rm --tag ghcr.io/mlocati/audacity-fix-po:latest ./docker
+      -
+        name: Login to the Docker container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      -
+        name: Publish image
+        run: docker push ghcr.io/mlocati/audacity-fix-po:latest
